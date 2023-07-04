@@ -14,6 +14,8 @@ def recognition() -> list:
     return result
 
 def main() -> None:
-    print(f'認識結果: {recognition()}')
+    result = recognition()
+    for i in result:
+        print(i)
     
     

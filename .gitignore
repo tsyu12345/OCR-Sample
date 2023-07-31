@@ -1,6 +1,6 @@
 # my ignore lists
 *.xlsx
-
+pascal-voc--learning-daatset
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

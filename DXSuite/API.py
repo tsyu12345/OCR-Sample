@@ -1,80 +1,15 @@
 from __future__ import annotations
 from typing import Final as const, Any
-from dataclasses import dataclass
+
 from enum import Enum
-from PIL import Image
-from json import JSONDecodeError
 import json
 import requests
 from requests.models import Response
+import os
 
-"""Interface"""
-@dataclass
-class AuthData:
-    id: int
-    key: str
-    domain: str
-    registerDate: str
-    expirationDate: str
+from Interfaces import *
 
 
-@dataclass
-class WorkFlowSettingData:
-    """_summary\n
-    ワークフロー設定取得APIのレスポンスデータ
-    """
-    workflowId: str
-    revision: int
-    applicationType: int
-    ocrKindType: int 
-    atypicalModelName: Any
-    dataCheck: bool
-    dataProcessing: bool
-    outputcharCode: str
-
-@dataclass
-class SearchWokrFlowResponse:
-    workflowId: str
-    folderId: str
-    name: str
-
-@dataclass
-class RegisterPOST:
-    files: str
-    unitName: str
-    departmentId: str
-
-@dataclass
-class RegisterResponse:
-    unitId: str
-    unitName: str
-
-
-@dataclass
-class SearchUnitParam:
-    folderId: str
-    workflowId: str
-    unitId: str
-    unitName: str
-    status: str
-    createdFrom: str
-    createdTo: str
-
-@dataclass
-class SearchUnitResponse:
-    unitId: str
-    unitName: str
-    status: int
-    dataProcessingStatus: int
-    daatCheckStatus: int
-    dataCompareStatus: int
-    csvDownloadStatus: int
-    csvFileName: str
-    folderId: str
-    workflowId: str
-    workflowName: str
-    createdAt: str
-""""""
 class RequestType(Enum):
     GET = "GET"
     POST = "POST"
@@ -99,7 +34,7 @@ class DXSuiteAPI:
         self.BASE_URL = f"https://{auth.domain}.dx-suite.com/wf/api/standard/v2/"
 
 
-    def __request(self, method: RequestType, uri: str, body=None) -> Response:
+    def __request(self, method: RequestType, uri: str, req_body: dict=None) -> Response:
         """_summary_
         リクエスト用補助関数
         Args:
@@ -112,7 +47,13 @@ class DXSuiteAPI:
         Returns:
             Any: レスポンスデータ
         """
-        response = requests.request(method.value, uri, headers=self.header, json=body)
+        if req_body is None:
+            req_body = {
+                "files": None,
+                "data": None,
+            }
+
+        response = requests.request(method.value, uri, headers=self.header, files='@DSC_0456 copy.jpg', data=req_body["data"])
 
         if response.status_code != 200:
             print(response.json())
@@ -165,9 +106,10 @@ class DXSuiteAPI:
         return res.json()
             
     
-    def register_unit(self, workflowId: str, body: dict) -> Any:
+    def register_unit(self, workflowId: str, param: list[RegisterPOST]) -> Any:
         """_summary_
-        読み取りユニット登録API
+        読み取りユニット登録API.
+        指定のワークフローに対して読み取る画像ファイルを登録します。
         Args:
             workflowId (str): ワークフローID
             body (dict): リクエストボディ
@@ -176,8 +118,22 @@ class DXSuiteAPI:
             Any: レスポンス
         """
         uri = f"{self.BASE_URL}/workflows/{workflowId}/units"
+        
+        files = {}
+        data = {}
+        for i, p in enumerate(param):
+            files[f"file[{i}]"] = f"@{os.path.basename(p.file)}" #TODO:filesの指定形式がおかしい
+            #file名は@test.pngの形式で送る
+            data[f"unitName[{i}]"] = p.unitName
+            data[f"departmentId[{i}]"] = p.departmentId
+
+        body = {
+            "files": files,
+            "data": data,
+        }
 
         response = self.__request(RequestType.POST, uri, body)
+
         return response
     
     
@@ -209,25 +165,52 @@ class DXSuiteAPI:
         return data
 
 
+def load_auth_data() -> list[AuthData]:
+    """_summary_
+    Auth.jsonから認証情報を読み込む関数
+    Returns:
+        list[AuthData]: 認証情報
+    """
+    with open("./Auth.json", "r") as f:
+        data = json.load(f)
+        auths = []
+        for a in data:
+            auths.append(AuthData(
+                key=a["key"], 
+                id=a["id"], 
+                domain=a["domain"], 
+                registerDate=a["registerDate"], 
+                expirationDate=a["expirationDate"]))
+        return auths
+
 
 
 
 
 if __name__ == "__main__":
     #単体テスト
-    with open("./Auth.json", "r") as f:
-        a = json.load(f)[0]
-        auth = AuthData(
-            key=a["key"], 
-            id=a["id"], 
-            domain=a["domain"], 
-            registerDate=a["registerDate"], 
-            expirationDate=a["expirationDate"])
-
+    auths = load_auth_data()
+    auth = auths[0]
 
     api = DXSuiteAPI(auth)
+    """
     data = api.get_workflow_setting("b3cc8d27-6fdc-4509-944b-686bec461974", 1)
-    print(data)
+    print("workflow data",data)
 
     csv = api.download_csv('adbd7341-31ac-4915-b938-a62374142c8b')
-    print(csv)
+    print(csv.text)
+    """
+
+    #次の画像ファイルパスが合っているか調べる
+    target_img_path = "./samples/DSC_0456 copy.jpg"
+    if not os.path.exists(target_img_path):
+        raise Exception("指定された画像ファイルが存在しません")
+
+    param: list[RegisterPOST] = [
+        RegisterPOST(file=target_img_path,)
+    ]
+
+    response = api.register_unit("b3cc8d27-6fdc-4509-944b-686bec461974", param)
+    print(response.text)
+
+

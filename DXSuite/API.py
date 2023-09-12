@@ -53,11 +53,13 @@ class DXSuiteAPI:
                 "data": None,
             }
 
-        response = requests.request(method.value, uri, headers=self.header, files='@DSC_0456 copy.jpg', data=req_body["data"])
-
+        response = requests.request(method.value, uri, headers=self.header, files={"files": "DSC_0456.jpg"})
+        #FIXME : file format is unsupported
         if response.status_code != 200:
             print(response.json())
-            raise Exception(f"request error code: {response.status_code}")
+            error_code = response.json()["errors"][0]["errorCode"]
+            message = response.json()["errors"][0]["message"]
+            raise Exception(f"HTTP Status Code: {response.status_code}, \n Error Code : {error_code}, \n Message: {message}")
         
         return response
 
@@ -202,7 +204,7 @@ if __name__ == "__main__":
     """
 
     #次の画像ファイルパスが合っているか調べる
-    target_img_path = "./samples/DSC_0456 copy.jpg"
+    target_img_path = "./samples/DSC_0456.jpg"
     if not os.path.exists(target_img_path):
         raise Exception("指定された画像ファイルが存在しません")
 

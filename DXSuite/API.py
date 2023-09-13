@@ -31,7 +31,7 @@ class DXSuiteAPI:
         self.header = {
             "apikey": self.auth.key,
         }
-        self.BASE_URL = f"https://{auth.domain}.dx-suite.com/wf/api/standard/v2/"
+        self.BASE_URL = f"https://{auth.domain}.dx-suite.com/wf/api/standard/v2"
 
 
     def __request(self, method: RequestType, uri: str, req_body: dict=None) -> Response:
@@ -53,10 +53,16 @@ class DXSuiteAPI:
                 "data": None,
             }
 
-        response = requests.request(method.value, uri, headers=self.header, files={"files": "DSC_0456.jpg"})
+        response = requests.request(
+            method.value, 
+            uri, 
+            headers=self.header, 
+            files=[
+                ('files', ("DSC_0456.png", open('DSC_0456.png', 'rb'))),
+                ('files', ("DSC_0461.jpg", open('samples/DSC_0461.jpg', 'rb')))
+            ])
         #FIXME : file format is unsupported
         if response.status_code != 200:
-            print(response.json())
             error_code = response.json()["errors"][0]["errorCode"]
             message = response.json()["errors"][0]["message"]
             raise Exception(f"HTTP Status Code: {response.status_code}, \n Error Code : {error_code}, \n Message: {message}")

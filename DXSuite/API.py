@@ -22,6 +22,7 @@ class DXSuiteAPI:
     """
     DXSuiteのAPIを叩くクラス
     APIリファレンス: https://drive.google.com/file/d/1O6bDu07jbzhzVjQ_7XAVHH-AMgzq3XPB/view
+    お手元にAPIの認証情報(Auth.json)が必要です。
     """
 
     BASE_URL: str
@@ -29,12 +30,12 @@ class DXSuiteAPI:
     def __init__(self, auth: AuthData):
         self.auth: const[AuthData] = auth
         self.header = {
-            "apikey": self.auth.key,
+            "apikey": self.auth["key"],
         }
-        self.BASE_URL = f"https://{auth.domain}.dx-suite.com/wf/api/standard/v2"
+        self.BASE_URL = f"https://{auth['domain']}.dx-suite.com/wf/api/standard/v2"
 
 
-    def __request(self, method: RequestType, uri: str, req_body: dict=None) -> Response:
+    def __request(self, method: RequestType, uri: str, body: dict=None) -> Response:
         """_summary_
         リクエスト用補助関数
         Args:
@@ -47,8 +48,8 @@ class DXSuiteAPI:
         Returns:
             Any: レスポンスデータ
         """
-        if req_body is None:
-            req_body = {
+        if body is None:
+            body = {
                 "files": None,
                 "data": None,
             }
@@ -57,11 +58,8 @@ class DXSuiteAPI:
             method.value, 
             uri, 
             headers=self.header, 
-            files=[
-                ('files', ("DSC_0456.png", open('DSC_0456.png', 'rb'))),
-                ('files', ("DSC_0461.jpg", open('samples/DSC_0461.jpg', 'rb')))
-            ])
-        #FIXME : file format is unsupported
+            files=body["files"])
+        
         if response.status_code != 200:
             error_code = response.json()["errors"][0]["errorCode"]
             message = response.json()["errors"][0]["message"]
@@ -83,70 +81,85 @@ class DXSuiteAPI:
             WorkFlowSettingData: ワークフロー設定データ
         """
         uri = f"{self.BASE_URL}/workflows/{workflowId}/revisions/{revision}/configuration"
-        data = self.__request(RequestType.GET, uri)
-        
-        return data.json()
+        response = self.__request(RequestType.GET, uri)
+        data = response.json()
+
+        return WorkFlowSettingData(
+            workflowId=data["workflowId"],
+            revision=data["revision"],
+            applicationType=data["applicationType"],
+            ocrKindType=data["ocrKindType"],
+            atypicalModelName= data["atypicalModelName"] if data["ocrKindType"]==2 else None,
+            dataCheck=data["dataCheck"],
+            dataProcessing=data["dataProcessing"],
+            outputcharCode=data["outputCharCode"]
+        )
     
-
-
-    def search_workflow(self, folderId: str, workflowName: str) -> dict[str, list[SearchWokrFlowResponse]]:
-        """_summary_
-        ワークフロー検索API\n
-        Args:\n
-            folderId (str): フォルダID.指定したフォルダ内のワークフローを検索します.\n
-            workflowName (str): ワークフロー名.指定した文字列に完全一致するワークフローを検索します。1〜128文字まで指定できます。日本語で設定する場合は、URLエンコードして設定します。\n
-
-        Returns:\n
-            dict[str, list[SearchWokrFlowResponse]]: 以下のJSONデータを返します。\n
-            { \n
-                "workflows": [ \n
-                    { \n
-                        "workflowId": "string", \n
-                        "folderId": "string", \n
-                        "name": "string" \n
-                    } \n
-                ] \n
-            } \n
-        """
-        uri = f"{self.BASE_URL}/workflows?folderId={folderId}&searchName={workflowName}"
-        
-        res = self.__request(RequestType.GET, uri)
-        return res.json()
-            
     
-    def register_unit(self, workflowId: str, param: list[RegisterPOST]) -> Any:
+    def register_unit(self, workflowId: str, param: RegisterPOST) -> RegisterResponse:
         """_summary_
         読み取りユニット登録API.
         指定のワークフローに対して読み取る画像ファイルを登録します。
         Args:
             workflowId (str): ワークフローID
-            body (dict): リクエストボディ
-
+            param (RegisterPOST): リクエストパラメータ
         Returns:
-            Any: レスポンス
+            dict[str, str]: {
+                "unitId": 登録された読み取りユニットID,
+                "unitName": 登録された読み取りユニット名
+            }
         """
         uri = f"{self.BASE_URL}/workflows/{workflowId}/units"
         
-        files = {}
-        data = {}
-        for i, p in enumerate(param):
-            files[f"file[{i}]"] = f"@{os.path.basename(p.file)}" #TODO:filesの指定形式がおかしい
-            #file名は@test.pngの形式で送る
-            data[f"unitName[{i}]"] = p.unitName
-            data[f"departmentId[{i}]"] = p.departmentId
+        files: list[tuple] = []
 
+        for file in param["files"]:
+            files.append(('files', (file, open(file, "rb"))))
+        
         body = {
             "files": files,
-            "data": data,
+            "data": {}
         }
-
         response = self.__request(RequestType.POST, uri, body)
+        data = response.json()
 
-        return response
+        return RegisterResponse(
+            unitId=data["unitId"],
+            unitName=data["unitName"]
+        )
     
-    
+
+    def download_csv(self, unitId: str, save_path:str=None, overwrite:bool=False) -> Any:
+        """_summary_
+        CSVダウンロードAPI
+        Args:
+            unitId (str): 結果をダウンロードしたい読み取りユニットID
+            save_path (str, optional): 保存先パス. Defaults to None.Noneの場合は保存せずにレスポンスを返します.
+            overwrite (bool, optional): 保存先にファイルが存在する場合に上書きするかどうか. Defaults to False.
+        Returns:
+            Any: レスポンス
+        """
+        uri = f"{self.BASE_URL}/units/{unitId}/csv"
+        response = self.__request(RequestType.GET, uri)
+
+        #responseをcsv化して保存
+        if save_path != None and overwrite:
+            self.__save_csv(save_path, response)
+            return {"save_path": save_path}
+        elif save_path != None and overwrite == False:
+            if os.path.exists(save_path):
+                raise Exception("File already exists. if you want to overwrite, set overwrite=True")
+            else:
+                self.__save_csv(save_path, response)
+                return {"save_path": save_path}
+        else:
+            return response
+
+
     def search_unit(self, param: SearchUnitParam) -> SearchUnitResponse:
         """_summary_
+        NOTE:構築中
+        TODO:返り値の型を修正
         読み取りユニット検索API
         Args:
             param (SearchUnitParam): リクエストパラメータ
@@ -157,20 +170,29 @@ class DXSuiteAPI:
         uri = f"{self.BASE_URL}/units?folderId={param.folderId}&workflowId={param.workflowId}&unitId={param.unitId}&unitName={param.unitName}&status={param.status}&createdFrom={param.createdFrom}&createdTo={param.createdTo}"
         data = self.__request(RequestType.GET, uri)
         return data
-    
-
-    def download_csv(self, unitId: str) -> Any:
+            
+    def search_workflow(self, folderId: str, workflowName: str) -> dict[str, list[SearchWokrFlowResponse]]:
         """_summary_
-        CSVダウンロードAPI
-        Args:
-            unitId (str): ユニットID
-
-        Returns:
-            Any: レスポンス
+        NOTE:構築中
+        TODO:folderIdを複数指定できるようにする
+        TODO:返り値の型を修正
+        ワークフロー検索API\n
+        Args:\n
+            folderId (str): フォルダID.指定したフォルダ内のワークフローを検索します.\n
+            workflowName (str): ワークフロー名.指定した文字列に完全一致するワークフローを検索します。1〜128文字まで指定できます。日本語で設定する場合は、URLエンコードして設定します。\n
         """
-        uri = f"{self.BASE_URL}/units/{unitId}/csv"
-        data = self.__request(RequestType.GET, uri)
-        return data
+        uri = f"{self.BASE_URL}/workflows?folderId={folderId}&searchName={workflowName}"
+        
+        res = self.__request(RequestType.GET, uri)
+        data = res.json()
+        
+        return 
+
+    def __save_csv(self, path: str, response: Response) -> None:
+        with open(path, "w") as f:
+            f.write(response.text)
+        
+
 
 
 def load_auth_data() -> list[AuthData]:
@@ -180,17 +202,8 @@ def load_auth_data() -> list[AuthData]:
         list[AuthData]: 認証情報
     """
     with open("./Auth.json", "r") as f:
-        data = json.load(f)
-        auths = []
-        for a in data:
-            auths.append(AuthData(
-                key=a["key"], 
-                id=a["id"], 
-                domain=a["domain"], 
-                registerDate=a["registerDate"], 
-                expirationDate=a["expirationDate"]))
-        return auths
-
+        data:list[AuthData] = json.load(f)
+    return data
 
 
 
@@ -201,24 +214,22 @@ if __name__ == "__main__":
     auth = auths[0]
 
     api = DXSuiteAPI(auth)
-    """
+    
     data = api.get_workflow_setting("b3cc8d27-6fdc-4509-944b-686bec461974", 1)
     print("workflow data",data)
 
-    csv = api.download_csv('adbd7341-31ac-4915-b938-a62374142c8b')
-    print(csv.text)
-    """
+    csv = api.download_csv('adbd7341-31ac-4915-b938-a62374142c8b', "out/test.csv", True)
+    print(csv)
+    
 
-    #次の画像ファイルパスが合っているか調べる
-    target_img_path = "./samples/DSC_0456.jpg"
-    if not os.path.exists(target_img_path):
-        raise Exception("指定された画像ファイルが存在しません")
-
-    param: list[RegisterPOST] = [
-        RegisterPOST(file=target_img_path,)
-    ]
+    param: RegisterPOST = {
+        "files": [
+            "./samples/DSC_0461.jpg",
+            "./samples/DSC_0462.jpg",
+        ]
+    }
 
     response = api.register_unit("b3cc8d27-6fdc-4509-944b-686bec461974", param)
-    print(response.text)
+    print(response)
 
 

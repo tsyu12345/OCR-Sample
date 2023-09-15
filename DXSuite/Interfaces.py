@@ -58,13 +58,21 @@ class RegisterResponse:
 
 @dataclass
 class SearchUnitParam:
+    """
+    読み取りユニット検索APIのリクエストパラメータ
+    folderId, workflowId, unitIdはカンマ区切りで複数指定可能
+    """
+    #指定したフォルダID内を検索する
     folderId: str
+    #指定したワークフローID内を検索する
     workflowId: str
+    #指定したユニットID内を検索する
     unitId: str
-    unitName: str
-    status: str
-    createdFrom: str
-    createdTo: str
+    #指定したユニット名内を検索する
+    unitName: str = None
+    status: str = None
+    createdFrom: str = None
+    createdTo: str = None
 
 @dataclass
 class SearchUnitResponse:
@@ -72,7 +80,7 @@ class SearchUnitResponse:
     unitName: str
     status: int
     dataProcessingStatus: int
-    daatCheckStatus: int
+    dataCheckStatus: int
     dataCompareStatus: int
     csvDownloadStatus: int
     csvFileName: str

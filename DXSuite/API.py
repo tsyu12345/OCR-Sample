@@ -156,37 +156,80 @@ class DXSuiteAPI:
             return response
 
 
-    def search_unit(self, param: SearchUnitParam) -> SearchUnitResponse:
+    def search_unit(self, param: SearchUnitParam) -> list[SearchUnitResponse]:
         """_summary_
-        NOTE:構築中
-        TODO:返り値の型を修正
         読み取りユニット検索API
         Args:
             param (SearchUnitParam): リクエストパラメータ
-
         Returns:
             SearchUnitResponse: レスポンス
         """
-        uri = f"{self.BASE_URL}/units?folderId={param.folderId}&workflowId={param.workflowId}&unitId={param.unitId}&unitName={param.unitName}&status={param.status}&createdFrom={param.createdFrom}&createdTo={param.createdTo}"
-        data = self.__request(RequestType.GET, uri)
-        return data
+
+        #folderId, workflowId, unitIdのどれか1つのみ指定可能
+        required_param = [param.folderId, param.workflowId, param.unitId]
+        if required_param.count(None) != 2:
+            raise Exception("Only one of 'folderId', 'workflowId', or 'unitId' can be specified.")
+
+        #Noneと空文字のパラメータは除外
+        query:str = ""
+        for i, [key, v] in enumerate(param.__dict__.items()):
+            if v != None and v != "":
+                query += f"&{key}={v}" if i != 0 else f"{key}={v}"
+
+        uri = f"{self.BASE_URL}/units?{query}"
+        response = self.__request(RequestType.GET, uri)
+        data: dict[str, list[dict]] = response.json()
+        result: list[SearchUnitResponse] = []
+        
+        for d in data['units']:
+            result.append(
+                SearchUnitResponse(
+                    unitId=d["unitId"],
+                    unitName=d["unitName"],
+                    status=d["status"],
+                    dataProcessingStatus=d["dataProcessingStatus"],
+                    dataCheckStatus=d["dataCheckStatus"],
+                    dataCompareStatus=d["dataCompareStatus"],
+                    csvDownloadStatus=d["csvDownloadStatus"],
+                    csvFileName=d["csvFileName"],
+                    folderId=d["folderId"],
+                    workflowId=d["workflowId"],
+                    workflowName=d["workflowName"],
+                    createdAt=d["createdAt"]))
+        
+        return result
             
-    def search_workflow(self, folderId: str, workflowName: str) -> dict[str, list[SearchWokrFlowResponse]]:
+    def search_workflow(self, folderId: str=None, workflowName: str= None) -> list[SearchWokrFlowResponse]:
         """_summary_
-        NOTE:構築中
-        TODO:folderIdを複数指定できるようにする
-        TODO:返り値の型を修正
         ワークフロー検索API\n
         Args:\n
             folderId (str): フォルダID.指定したフォルダ内のワークフローを検索します.\n
             workflowName (str): ワークフロー名.指定した文字列に完全一致するワークフローを検索します。1〜128文字まで指定できます。日本語で設定する場合は、URLエンコードして設定します。\n
         """
-        uri = f"{self.BASE_URL}/workflows?folderId={folderId}&searchName={workflowName}"
+
+        #Noneと空文字のパラメータは除外
+        query:str = ""
+        if folderId != None:
+            query += f"&folderId={folderId}"
+        if workflowName != None:
+            query += f"&searchName={workflowName}"
         
+
+        uri = f"{self.BASE_URL}/workflows?{query}"
         res = self.__request(RequestType.GET, uri)
-        data = res.json()
+        json = res.json()
+        data = json['workflows']
+
+        result: list[SearchWokrFlowResponse] = []
+        for d in data:
+            result.append(
+                SearchWokrFlowResponse(
+                    workflowId=d["id"],
+                    folderId=d["folderId"],
+                    name=d["name"]))
         
-        return 
+        return result
+    
 
     def __save_csv(self, path: str, response: Response) -> None:
         with open(path, "w") as f:
@@ -215,11 +258,11 @@ if __name__ == "__main__":
 
     api = DXSuiteAPI(auth)
     
-    data = api.get_workflow_setting("b3cc8d27-6fdc-4509-944b-686bec461974", 1)
-    print("workflow data",data)
+    #data = api.get_workflow_setting("b3cc8d27-6fdc-4509-944b-686bec461974", 1)
+    #print("workflow data",data)
 
-    csv = api.download_csv('adbd7341-31ac-4915-b938-a62374142c8b', "out/test.csv", True)
-    print(csv)
+    #csv = api.download_csv('adbd7341-31ac-4915-b938-a62374142c8b', "out/test.csv", True)
+    #print(csv)
     
 
     param: RegisterPOST = {
@@ -229,7 +272,17 @@ if __name__ == "__main__":
         ]
     }
 
-    response = api.register_unit("b3cc8d27-6fdc-4509-944b-686bec461974", param)
-    print(response)
+    #response = api.register_unit("b3cc8d27-6fdc-4509-944b-686bec461974", param)
+    #print(response)
+
+    searchUnitParam = SearchUnitParam(
+        folderId="e28ac22d-a3e8-468e-af3b-fcc743038bb1",
+        workflowId=None,
+        unitId=None)
+    
+    #response = api.search_unit(searchUnitParam)
+    #print(response)
+
+    response = api.search_workflow("e28ac22d-a3e8-468e-af3b-fcc743038bb1", "test")
 
 
